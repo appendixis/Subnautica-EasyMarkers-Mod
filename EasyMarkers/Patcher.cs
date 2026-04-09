@@ -4,7 +4,9 @@ using HarmonyLib;
 using Nautilus.Handlers;
 using Nautilus.Utility;
 using Story;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
@@ -70,7 +72,7 @@ namespace EasyMarkers
             Harmony.CreateAndPatchAll(typeof(PingEntryPatch)); // rename markers in list / add marker controls
             Harmony.CreateAndPatchAll(typeof(PingPatch)); // rename markers on GUI
             Harmony.CreateAndPatchAll(typeof(SignalPingPatch)); // disable visit trigger
-            Harmony.CreateAndPatchAll(typeof(PingTabPatch)); // add UI
+            Harmony.CreateAndPatchAll(typeof(PingTabPatch)); // add UI / sort markers
         }
     }
 
@@ -89,7 +91,6 @@ namespace EasyMarkers
 
             return true;
         }
-
 
         [HarmonyPostfix]
         [HarmonyPatch("Initialize", new[] { typeof(string), typeof(bool), typeof(PingType), typeof(string), typeof(int) })]
@@ -280,8 +281,7 @@ namespace EasyMarkers
         [HarmonyPatch("Open")]
         public static void CreateAddMarkerButtonPatch(uGUI_PingTab __instance)
         {
-            Button existingButton = __instance.GetComponentInChildren<Button>();
-            if (existingButton != null && existingButton.gameObject.name == "EasyMarkers_AddPingButton")
+            if (__instance.visibilityToggle?.transform?.parent == null || __instance.visibilityToggle.transform.parent.Find("EasyMarkers_AddMarkerButton") != null)
             {
                 return;
             }
@@ -289,18 +289,8 @@ namespace EasyMarkers
             CreateAddMarkerButton(__instance);
         }
 
-
         private static void CreateAddMarkerButton(uGUI_PingTab __instance)
         {
-            Button[] existingButtons = __instance.GetComponentsInChildren<Button>();
-            foreach (Button existingButton in existingButtons)
-            {
-                if (existingButton.gameObject.name == "EasyMarkers_AddPingButton")
-                {
-                    return;
-                }
-            }
-
             Toggle visibilityToggle = __instance.visibilityToggle;
             if (visibilityToggle == null)
             {
@@ -314,7 +304,7 @@ namespace EasyMarkers
             }
 
             GameObject addMarkerButtonObj = GameObject.Instantiate(visibilityToggle.gameObject, parentTransform);
-            addMarkerButtonObj.name = "EasyMarkers_AddPingButton";
+            addMarkerButtonObj.name = "EasyMarkers_AddMarkerButton";
 
             GameObject.DestroyImmediate(addMarkerButtonObj.GetComponent<Toggle>());
             Image[] allImagesOnButton = addMarkerButtonObj.GetComponentsInChildren<Image>();
@@ -378,17 +368,44 @@ namespace EasyMarkers
                 GameObject signalObject = UnityEngine.Object.Instantiate(goalTracker.signalPrefab, Player.main.transform.position, Quaternion.identity);
 
                 SignalPing signal = signalObject.GetComponent<SignalPing>();
-                signal.pos = Player.main.transform.position;
-                //signal.disableOnEnter = false;
-                signal.descriptionKey = EasyMarkers.Prefix + markerLabel;
+                if (signal != null)
+                {
+                    signal.pos = Player.main.transform.position;
+                    signal.descriptionKey = EasyMarkers.Prefix + markerLabel;
 
-                PingInstance pingInstance = signalObject.GetComponent<PingInstance>();
-                pingInstance.visitable = false;
-                pingInstance.SetType(PingType.Signal);
-                pingInstance.SetLabel(signal.descriptionKey);
-                pingInstance.SetVisible(true);
-                pingInstance.SetColor(4);
+                    PingInstance pingInstance = signalObject.GetComponent<PingInstance>();
+                    pingInstance.visitable = false;
+                    pingInstance.SetColor(4);
+                }
             });
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch("UpdateEntries")]
+        public static void SortMarkersPatch(uGUI_PingTab __instance)
+        {
+            var entries = Traverse.Create(__instance).Field("entries").GetValue<Dictionary<string, uGUI_PingEntry>>();
+
+            var sortedEntries = new List<KeyValuePair<string, uGUI_PingEntry>>();
+
+            foreach (var entry in entries)
+            {
+                var pingInstance = PingManager.Get(entry.Key);
+                if (pingInstance != null)
+                {
+                    sortedEntries.Add(entry);
+                }
+            }
+
+            sortedEntries = sortedEntries
+                .OrderBy(x => (int)PingManager.Get(x.Key).pingType)
+                .ThenBy(x => !PingManager.Get(x.Key).GetLabel()?.StartsWith("["))
+                .ToList();
+
+            for (int i = 0; i < sortedEntries.Count; i++)
+            {
+                sortedEntries[i].Value.rectTransform.SetSiblingIndex(i);
+            }
         }
     }
 }
