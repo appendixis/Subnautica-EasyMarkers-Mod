@@ -1,20 +1,23 @@
 ﻿using BepInEx;
 using BepInEx.Logging;
 using HarmonyLib;
-using Nautilus.Utility;
 using Nautilus.Handlers;
+using Nautilus.Utility;
 using Story;
 using System.IO;
 using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
-using System.Net.NetworkInformation;
 
 namespace EasyMarkers
 {
-    [BepInPlugin("com.appendixis.easymarkers", "EasyMarkers", "1.0.0")]
+    [BepInPlugin(Guid, Name, Version)]
     public class EasyMarkers : BaseUnityPlugin
     {
+        public const string Guid = "com.appendixis.easymarkers";
+        public const string Name = "EasyMarkers";
+        public const string Version = "1.0.1";
+
         public static string Prefix = "[EasyMarkers] ";
         public static EasyMarkers Instance;
 
@@ -97,9 +100,9 @@ namespace EasyMarkers
                 return;
             }
 
-            bool isModMarkerOrNone = type == PingType.None || (name != null && name.StartsWith(EasyMarkers.Prefix));
+            bool isModMarkerOrBroken = type == PingType.None || (type == PingType.Signal && string.IsNullOrEmpty(name)) || (name != null && name.StartsWith(EasyMarkers.Prefix));
 
-            if (!isModMarkerOrNone)
+            if (!isModMarkerOrBroken)
             {
                 return;
             }
@@ -155,6 +158,11 @@ namespace EasyMarkers
                         if (confirmed)
                         {
                             PingManager.Unregister(pingInstance);
+                            PrefabIdentifier prefab = pingInstance.GetComponent<PrefabIdentifier>();
+                            if (prefab != null)
+                            {
+                                UnityEngine.Object.Destroy(prefab);
+                            }
                             UnityEngine.Object.Destroy(pingInstance);
                         }
                     }
