@@ -1,5 +1,6 @@
 {
 	"InputMarkerNameHeader": "Название метки",
-	"InputDefaultName": "Метка ({0} м)",
-	"DeleteConfirmDialogHeader": "Удалить метку?"
+	"InputDefaultMarkerName": "Метка ({0} м)",
+	"DeleteMarkerConfirmDialogHeader": "Удалить метку?",
+	"AddMarkerButtonTooltip": "Поставить метку в текущем месте"
 }

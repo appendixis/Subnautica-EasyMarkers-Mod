@@ -18,7 +18,7 @@ namespace EasyMarkers
     {
         public const string Guid = "com.appendixis.easymarkers";
         public const string Name = "EasyMarkers";
-        public const string Version = "1.0.1";
+        public const string Version = "1.2";
 
         public static string Prefix = "[EasyMarkers] ";
         public static EasyMarkers Instance;
@@ -37,7 +37,7 @@ namespace EasyMarkers
 
             LanguageHandler.RegisterLocalizationFolder();
 
-            logger.LogInfo("EasyMarkers Mod loaded!");
+            logger.LogInfo($"EasyMarkers v{Version} loaded!");
 
             string AddMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "AddPingButton.png");
             if (!File.Exists(AddMarkerIconPath))
@@ -101,14 +101,25 @@ namespace EasyMarkers
                 return;
             }
 
-            bool isModMarkerOrBroken = type == PingType.None || (type == PingType.Signal && string.IsNullOrEmpty(name)) || (name != null && name.StartsWith(EasyMarkers.Prefix));
+            RectTransform visibilityButtonRect = __instance.visibility.GetComponent<RectTransform>();
 
-            if (!isModMarkerOrBroken)
+            if (visibilityButtonRect == null)
             {
+                EasyMarkers.logger.LogError("Signal visibility button not found! " + id);
                 return;
             }
 
-            RectTransform visibilityButtonRect = __instance.visibility.GetComponent<RectTransform>();
+            __instance.visibility.transform.localScale = 0.8f * Vector3.one;
+
+            visibilityButtonRect.sizeDelta = new Vector2(visibilityButtonRect.sizeDelta.y, visibilityButtonRect.sizeDelta.y);
+
+            bool isModMarker = name != null && name.StartsWith(EasyMarkers.Prefix);
+            bool isBroken = type == PingType.None || (type == PingType.Signal && string.IsNullOrEmpty(name));
+
+            if (!isModMarker && !isBroken)
+            {
+                return;
+            }
 
             GameObject deleteMarkerButtonObj = GameObject.Instantiate(__instance.visibility.gameObject, __instance.visibility.transform.parent);
             deleteMarkerButtonObj.name = "DeleteButton_" + id;
@@ -136,15 +147,12 @@ namespace EasyMarkers
             RectTransform deleteButtonRect = deleteMarkerButtonObj.GetComponent<RectTransform>();
             if (deleteButtonRect != null)
             {
-                if (visibilityButtonRect != null)
-                {
-                    deleteButtonRect.anchoredPosition = new Vector2(
-                        visibilityButtonRect.anchoredPosition.x - 64,
-                        visibilityButtonRect.anchoredPosition.y
-                    );
+                deleteButtonRect.anchoredPosition = new Vector2(
+                    visibilityButtonRect.anchoredPosition.x - 55,
+                    visibilityButtonRect.anchoredPosition.y
+                );
 
-                    deleteButtonRect.sizeDelta = new Vector2(visibilityButtonRect.sizeDelta.y - 10, visibilityButtonRect.sizeDelta.y - 10);
-                }
+                deleteButtonRect.sizeDelta = new Vector2(visibilityButtonRect.sizeDelta.y, visibilityButtonRect.sizeDelta.y);
             }
 
             deleteMarkerButton.onClick.AddListener(() => {
@@ -153,88 +161,87 @@ namespace EasyMarkers
                 {
                     return;
                 }
-                uGUI.main.confirmation.Show(
-                    Language.main.Get("DeleteConfirmDialogHeader"),
-                    (bool confirmed) => {
-                        if (confirmed)
+                uGUI_PDA.main.dialog.Show(Language.main.Get("DeleteMarkerConfirmDialogHeader"), delegate (int option)
+                {
+                    if (option == 1)
+                    {
+                        PingManager.Unregister(pingInstance);
+                        PrefabIdentifier prefab = pingInstance.GetComponent<PrefabIdentifier>();
+                        if (prefab != null)
                         {
-                            PingManager.Unregister(pingInstance);
-                            PrefabIdentifier prefab = pingInstance.GetComponent<PrefabIdentifier>();
-                            if (prefab != null)
-                            {
-                                UnityEngine.Object.Destroy(prefab);
-                            }
-                            UnityEngine.Object.Destroy(pingInstance);
+                            UnityEngine.Object.Destroy(prefab);
                         }
+                        UnityEngine.Object.Destroy(pingInstance);
                     }
-                );
+                }, new string[]
+                {
+                    Language.main.Get("No"),
+                    Language.main.Get("Yes")
+                });
             });
 
-            if (name == null || type == PingType.None)
+            if (isModMarker)
             {
-                return;
-            }
+                GameObject renameMarkerButtonObj = GameObject.Instantiate(__instance.visibility.gameObject, __instance.visibility.transform.parent);
+                renameMarkerButtonObj.name = "RenameButton_" + id;
 
-            GameObject renameMarkerButtonObj = GameObject.Instantiate(__instance.visibility.gameObject, __instance.visibility.transform.parent);
-            renameMarkerButtonObj.name = "RenameButton_" + id;
-
-            GameObject.DestroyImmediate(renameMarkerButtonObj.GetComponent<Toggle>());
-            Image[] allImagesOnRenameButton = renameMarkerButtonObj.GetComponentsInChildren<Image>();
-            foreach (Image img in allImagesOnRenameButton)
-            {
-                if (img.name == "Eye")
+                GameObject.DestroyImmediate(renameMarkerButtonObj.GetComponent<Toggle>());
+                Image[] allImagesOnRenameButton = renameMarkerButtonObj.GetComponentsInChildren<Image>();
+                foreach (Image img in allImagesOnRenameButton)
                 {
-                    GameObject.DestroyImmediate(img);
+                    if (img.name == "Eye")
+                    {
+                        GameObject.DestroyImmediate(img);
+                    }
                 }
-            }
 
-            Button renameMarkerButton = renameMarkerButtonObj.AddComponent<Button>();
+                Button renameMarkerButton = renameMarkerButtonObj.AddComponent<Button>();
 
-            if (EasyMarkers.RenameMarkerSprite != null)
-            {
-                Image newImage = renameMarkerButton.GetComponent<Image>();
-                newImage.sprite = EasyMarkers.RenameMarkerSprite;
-                newImage.preserveAspect = true;
-                newImage.color = Color.white;
-            }
+                if (EasyMarkers.RenameMarkerSprite != null)
+                {
+                    Image newImage = renameMarkerButton.GetComponent<Image>();
+                    newImage.sprite = EasyMarkers.RenameMarkerSprite;
+                    newImage.preserveAspect = true;
+                    newImage.color = Color.white;
+                }
 
-            RectTransform renameButtonRect = renameMarkerButtonObj.GetComponent<RectTransform>();
-            if (renameButtonRect != null)
-            {
-                if (visibilityButtonRect != null)
+                RectTransform renameButtonRect = renameMarkerButtonObj.GetComponent<RectTransform>();
+                if (renameButtonRect != null)
                 {
                     renameButtonRect.anchoredPosition = new Vector2(
-                        visibilityButtonRect.anchoredPosition.x + 64,
+                        visibilityButtonRect.anchoredPosition.x + 55,
                         visibilityButtonRect.anchoredPosition.y
                     );
 
-                    renameButtonRect.sizeDelta = new Vector2(visibilityButtonRect.sizeDelta.y - 10, visibilityButtonRect.sizeDelta.y - 10);
-                }
-            }
-
-            renameMarkerButton.onClick.AddListener(() =>
-            {
-                PingInstance pingInstance = PingManager.Get(id);
-
-                if (pingInstance == null)
-                {
-                    return;
+                    renameButtonRect.sizeDelta = new Vector2(visibilityButtonRect.sizeDelta.y, visibilityButtonRect.sizeDelta.y);
                 }
 
-                uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", name.Substring(EasyMarkers.Prefix.Length), 25, (string markerLabel) =>
+                renameMarkerButton.onClick.AddListener(() =>
                 {
-                    if (string.IsNullOrEmpty(markerLabel))
+                    PingInstance pingInstance = PingManager.Get(id);
+
+                    if (pingInstance == null)
                     {
                         return;
                     }
+
                     SignalPing signal = pingInstance.GetComponent<SignalPing>();
-                    if (signal != null)
+                    if (signal == null)
                     {
+                        return;
+                    }
+
+                    uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", signal.descriptionKey.Substring(EasyMarkers.Prefix.Length), 256, (string markerLabel) =>
+                    {
+                        if (string.IsNullOrEmpty(markerLabel))
+                        {
+                            return;
+                        }
                         signal.descriptionKey = EasyMarkers.Prefix + markerLabel;
                         pingInstance.SetLabel(EasyMarkers.Prefix + markerLabel);
-                    }
+                    });
                 });
-            });
+            }
         }
     }
 
@@ -340,6 +347,9 @@ namespace EasyMarkers
                 }
             }
 
+            SimpleTooltip tooltip = addMarkerButtonObj.AddComponent<SimpleTooltip>();
+            tooltip.text = Language.main.Get("AddMarkerButtonTooltip");
+
             addMarkerButton.onClick.AddListener(CreateNewMarkerAtPlayer);
         }
 
@@ -359,7 +369,7 @@ namespace EasyMarkers
 
             int depth = (int) (Ocean.GetOceanLevel() - Player.main.transform.position.y);
 
-            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", string.Format(Language.main.Get("InputDefaultName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 25, (string markerLabel) => {
+            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", string.Format(Language.main.Get("InputDefaultMarkerName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 256, (string markerLabel) => {
                 if (string.IsNullOrEmpty(markerLabel))
                 {
                     return;
