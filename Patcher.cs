@@ -11,14 +11,14 @@ using System.Reflection;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace EasyMarkersMod
+namespace EasyMarkers
 {
     [BepInPlugin(Guid, Name, Version)]
     public class EasyMarkers : BaseUnityPlugin
     {
         public const string Guid = "com.appendixis.easymarkers";
         public const string Name = "EasyMarkers";
-        public const string Version = "1.3";
+        public const string Version = "1.2";
 
         public static string Prefix = "[EasyMarkers] ";
         public static EasyMarkers Instance;
@@ -28,6 +28,7 @@ namespace EasyMarkersMod
         public static Sprite AddMarkerSprite;
         public static Sprite RenameMarkerSprite;
         public static Sprite DeleteMarkerSprite;
+
 
         private void Awake()
         {
@@ -41,7 +42,7 @@ namespace EasyMarkersMod
             string AddMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "AddPingButton.png");
             if (!File.Exists(AddMarkerIconPath))
             {
-                logger.LogError($"file not found: {AddMarkerIconPath}");
+                EasyMarkers.logger.LogError($"file not found: {AddMarkerIconPath}");
             }
             else
             {
@@ -51,7 +52,7 @@ namespace EasyMarkersMod
             string RenameMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "RenamePingButton.png");
             if (!File.Exists(RenameMarkerIconPath))
             {
-                logger.LogError($"file not found: {RenameMarkerIconPath}");
+                EasyMarkers.logger.LogError($"file not found: {RenameMarkerIconPath}");
             }
             else
             {
@@ -61,7 +62,7 @@ namespace EasyMarkersMod
             string DeleteMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "DeletePingButton.png");
             if (!File.Exists(DeleteMarkerIconPath))
             {
-                logger.LogError($"file not found: {DeleteMarkerIconPath}");
+                EasyMarkers.logger.LogError($"file not found: {DeleteMarkerIconPath}");
             }
             else
             {
@@ -72,54 +73,6 @@ namespace EasyMarkersMod
             Harmony.CreateAndPatchAll(typeof(PingPatch)); // rename markers on GUI
             Harmony.CreateAndPatchAll(typeof(SignalPingPatch)); // disable visit trigger
             Harmony.CreateAndPatchAll(typeof(PingTabPatch)); // add UI / sort markers
-        }
-
-        public static void Create(string newMarkerName = null, Vector3 position = default, int colorIndex = 4)
-        {
-            if (position == default || position == null || position == Vector3.zero)
-            {
-                position = Player.main.transform.position;
-            }
-
-            if (!string.IsNullOrEmpty(newMarkerName))
-            {
-                PlaceMarker(newMarkerName, position, colorIndex);
-                return;
-            }
-
-            int depth = (int)(Ocean.GetOceanLevel() - Player.main.transform.position.y);
-
-            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", string.Format(Language.main.Get("InputDefaultMarkerName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 256, (string inputMarkerNameResult) => {
-                if (!string.IsNullOrEmpty(inputMarkerNameResult))
-                {
-                    PlaceMarker(inputMarkerNameResult, position, colorIndex);
-                }
-            });
-        }
-
-        private static void PlaceMarker(string newMarkerName, Vector3 position, int colorIndex)
-        {
-            logger.LogInfo("place marker at " + position);
-
-            OnGoalUnlockTracker goalTracker = UnityEngine.Object.FindObjectOfType<OnGoalUnlockTracker>();
-            if (goalTracker == null || goalTracker.signalPrefab == null)
-            {
-                logger.LogError("Signal prefab not found!");
-                return;
-            }
-
-            GameObject signalObject = UnityEngine.Object.Instantiate(goalTracker.signalPrefab, position, Quaternion.identity);
-
-            SignalPing signal = signalObject.GetComponent<SignalPing>();
-            if (signal != null)
-            {
-                signal.pos = position;
-                signal.descriptionKey = EasyMarkers.Prefix + newMarkerName;
-
-                PingInstance pingInstance = signalObject.GetComponent<PingInstance>();
-                pingInstance.visitable = false;
-                pingInstance.SetColor(colorIndex);
-            }
         }
     }
 
@@ -397,8 +350,43 @@ namespace EasyMarkersMod
             SimpleTooltip tooltip = addMarkerButtonObj.AddComponent<SimpleTooltip>();
             tooltip.text = Language.main.Get("AddMarkerButtonTooltip");
 
-            addMarkerButton.onClick.AddListener(() => {
-                EasyMarkers.Create();
+            addMarkerButton.onClick.AddListener(CreateNewMarkerAtPlayer);
+        }
+
+        private static void CreateNewMarkerAtPlayer()
+        {
+            if (Player.main == null)
+            {
+                return;
+            }
+
+            OnGoalUnlockTracker goalTracker = UnityEngine.Object.FindObjectOfType<OnGoalUnlockTracker>();
+            if (goalTracker == null || goalTracker.signalPrefab == null)
+            {
+                EasyMarkers.logger.LogError("Signal prefab not found!");
+                return;
+            }
+
+            int depth = (int) (Ocean.GetOceanLevel() - Player.main.transform.position.y);
+
+            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", string.Format(Language.main.Get("InputDefaultMarkerName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 256, (string markerLabel) => {
+                if (string.IsNullOrEmpty(markerLabel))
+                {
+                    return;
+                }
+
+                GameObject signalObject = UnityEngine.Object.Instantiate(goalTracker.signalPrefab, Player.main.transform.position, Quaternion.identity);
+
+                SignalPing signal = signalObject.GetComponent<SignalPing>();
+                if (signal != null)
+                {
+                    signal.pos = Player.main.transform.position;
+                    signal.descriptionKey = EasyMarkers.Prefix + markerLabel;
+
+                    PingInstance pingInstance = signalObject.GetComponent<PingInstance>();
+                    pingInstance.visitable = false;
+                    pingInstance.SetColor(4);
+                }
             });
         }
 
@@ -429,5 +417,5 @@ namespace EasyMarkersMod
                 sortedEntries[i].Value.rectTransform.SetSiblingIndex(i);
             }
         }
-    }  
+    }
 }

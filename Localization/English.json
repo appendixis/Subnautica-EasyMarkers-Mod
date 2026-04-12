@@ -1,0 +1,6 @@
+{
+	"InputMarkerNameHeader": "Marker name",
+	"InputDefaultMarkerName": "Marker ({0} m)",
+	"DeleteMarkerConfirmDialogHeader": "Delete Marker?",
+	"AddMarkerButtonTooltip": "Place a marker at the current location"
+}
