@@ -2,6 +2,7 @@
 
 ## Description
 The mod allows you to place markers, as well as edit and delete them, in the Beacon Manager tab of the PDA.
+You can also export and import markers from one save to another, or share them with friends.
 
 ## Requires:
 - BepInEx (https://www.nexusmods.com/subnautica/mods/1108)
