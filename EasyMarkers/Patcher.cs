@@ -3,11 +3,16 @@ using BepInEx.Logging;
 using HarmonyLib;
 using Nautilus.Handlers;
 using Nautilus.Utility;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Story;
+using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -18,7 +23,7 @@ namespace EasyMarkersMod
     {
         public const string Guid = "com.appendixis.easymarkers";
         public const string Name = "EasyMarkers";
-        public const string Version = "1.3";
+        public const string Version = "1.4";
 
         public static string Prefix = "[EasyMarkers] ";
         public static EasyMarkers Instance;
@@ -28,6 +33,8 @@ namespace EasyMarkersMod
         public static Sprite AddMarkerSprite;
         public static Sprite RenameMarkerSprite;
         public static Sprite DeleteMarkerSprite;
+        public static Sprite SaveMarkersSprite;
+        public static Sprite LoadMarkersSprite;
 
         private void Awake()
         {
@@ -38,35 +45,11 @@ namespace EasyMarkersMod
 
             logger.LogInfo($"EasyMarkers v{Version} loaded!");
 
-            string AddMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "AddPingButton.png");
-            if (!File.Exists(AddMarkerIconPath))
-            {
-                logger.LogError($"file not found: {AddMarkerIconPath}");
-            }
-            else
-            {
-                AddMarkerSprite = ImageUtils.LoadSpriteFromFile(AddMarkerIconPath);
-            }
-
-            string RenameMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "RenamePingButton.png");
-            if (!File.Exists(RenameMarkerIconPath))
-            {
-                logger.LogError($"file not found: {RenameMarkerIconPath}");
-            }
-            else
-            {
-                RenameMarkerSprite = ImageUtils.LoadSpriteFromFile(RenameMarkerIconPath);
-            }
-
-            string DeleteMarkerIconPath = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", "DeletePingButton.png");
-            if (!File.Exists(DeleteMarkerIconPath))
-            {
-                logger.LogError($"file not found: {DeleteMarkerIconPath}");
-            }
-            else
-            {
-                DeleteMarkerSprite = ImageUtils.LoadSpriteFromFile(DeleteMarkerIconPath);
-            }
+            AddMarkerSprite = LoadSpriteFromFile("AddPingButton.png");
+            RenameMarkerSprite = LoadSpriteFromFile("RenamePingButton.png");
+            DeleteMarkerSprite = LoadSpriteFromFile("DeletePingButton.png");
+            SaveMarkersSprite = LoadSpriteFromFile("SaveMarkersButton.png");
+            LoadMarkersSprite = LoadSpriteFromFile("LoadMarkersButton.png");
 
             Harmony.CreateAndPatchAll(typeof(PingEntryPatch)); // rename markers in list / add marker controls
             Harmony.CreateAndPatchAll(typeof(PingPatch)); // rename markers on GUI
@@ -74,11 +57,32 @@ namespace EasyMarkersMod
             Harmony.CreateAndPatchAll(typeof(PingTabPatch)); // add UI / sort markers
         }
 
+        public static Sprite LoadSpriteFromFile(string filename)
+        {
+            string path = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "Resources", filename);
+            if (!File.Exists(path))
+            {
+                logger.LogError($"file not found: {path}");
+                return null;
+            }
+
+            return ImageUtils.LoadSpriteFromFile(path);
+        }
+
+        public static IEnumerator SetUserInputText(string text)
+        {
+            yield return new WaitForSecondsRealtime(0.05f);
+            GUIUtility.systemCopyBuffer = text;
+            uGUI.main.userInput.inputField.MoveTextStart(shift: false);
+            uGUI.main.userInput.inputField.text = text;
+            uGUI.main.userInput.inputField.MoveTextEnd(shift: true);
+        }
+
         public static void Create(string newMarkerName = null, Vector3 position = default, int colorIndex = 4)
         {
             if (position == default || position == null || position == Vector3.zero)
             {
-                position = Player.main.transform.position;
+                position = Player.main.transform.position;  
             }
 
             if (!string.IsNullOrEmpty(newMarkerName))
@@ -89,11 +93,148 @@ namespace EasyMarkersMod
 
             int depth = (int)(Ocean.GetOceanLevel() - Player.main.transform.position.y);
 
-            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", string.Format(Language.main.Get("InputDefaultMarkerName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 256, (string inputMarkerNameResult) => {
+            uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), Language.main.Get("EM_OK"), string.Format(Language.main.Get("InputDefaultMarkerName"), (depth < 0 ? "+" + (depth * -1).ToString() : depth.ToString())), 256, (string inputMarkerNameResult) => {
                 if (!string.IsNullOrEmpty(inputMarkerNameResult))
                 {
                     PlaceMarker(inputMarkerNameResult, position, colorIndex);
                 }
+            });
+        }
+
+        public static void Export()
+        {
+
+            var signalsToExport = new List<object>();
+
+            var gameSignals = UnityEngine.Object.FindObjectsOfType<SignalPing>();
+            foreach (var gameSignal in gameSignals)
+            {
+                if (!gameSignal.descriptionKey.StartsWith(EasyMarkers.Prefix))
+                {
+                    continue;
+                }
+                var ping = gameSignal.GetComponent<PingInstance>();
+                if (ping != null && ping.visible)
+                {
+                    signalsToExport.Add(new {
+                        n = gameSignal.descriptionKey.Substring(EasyMarkers.Prefix.Length),
+                        d = new List<float>() { (float) Math.Round(gameSignal.transform.position.x, 2), (float)Math.Round(gameSignal.transform.position.y, 2) , (float)Math.Round(gameSignal.transform.position.z, 2), (float) ping.colorIndex },
+                    });
+                }
+            }
+
+            if (signalsToExport.Count == 0)
+            {
+                ErrorMessage.AddDebug(Language.main.Get("ExportMarkersNoMarkersMessage"));
+                return;
+            }
+
+            string json = JsonConvert.SerializeObject(signalsToExport, Formatting.None);
+            string base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+
+            try
+            {
+                GUIUtility.systemCopyBuffer = base64;
+                ErrorMessage.AddDebug(Language.main.Get("ExportMarkersCopiedToClipboard"));
+            }
+            catch (System.Exception e)
+            {
+                logger.LogError($"Copy to buffer error: {e.Message}");
+                uGUI.main.userInput.RequestString(Language.main.Get("ExportMarkersLabel"), Language.main.Get("Close"), "", 0, (string inputResult) => { });
+                Instance.StartCoroutine(SetUserInputText(base64));
+                ErrorMessage.AddDebug(Language.main.Get("ExportMarkersErrorClipboard"));
+            }
+            
+        }
+
+        public static void Import()
+        {
+            uGUI.main.userInput.RequestString(Language.main.Get("ImportMarkersLabel"), Language.main.Get("EM_OK"), "", 0, (string inputMarkersString) => {
+                if (string.IsNullOrEmpty(inputMarkersString))
+                {
+                    return;
+                }
+
+                byte[] bytes = System.Convert.FromBase64String(inputMarkersString);
+                string json = System.Text.Encoding.UTF8.GetString(bytes);
+
+                if (string.IsNullOrEmpty(json))
+                {
+                    ErrorMessage.AddDebug(Language.main.Get("ImportMarkersInvalidCode"));
+                    return;
+                }
+
+                List<object> signalsFromImport = null;
+
+                try
+                {
+                    signalsFromImport = JsonConvert.DeserializeObject<List<object>>(json);
+                    if (signalsFromImport == null)
+                    {
+                        ErrorMessage.AddDebug(Language.main.Get("ImportMarkersInvalidCode"));
+                        return;
+                    }
+                }
+                catch (JsonException e)
+                {
+                    logger.LogError($"Parse JSON error: {e.Message}");
+                    ErrorMessage.AddDebug(Language.main.Get("ImportMarkersInvalidCode"));
+                    return;
+                }
+                catch (Exception e)
+                {
+                    logger.LogError($"Parse JSON error: {e.Message}");
+                    ErrorMessage.AddDebug(Language.main.Get("ImportMarkersInvalidCode"));
+                    return;
+                }
+
+                var existsMarkersPos = new List<Vector3>();
+
+                var gameSignals = UnityEngine.Object.FindObjectsOfType<SignalPing>();
+                foreach (var gameSignal in gameSignals)
+                {
+                    if (!gameSignal.descriptionKey.StartsWith(EasyMarkers.Prefix))
+                    {
+                        continue;
+                    }
+                    existsMarkersPos.Add(new Vector3((float)Math.Round(gameSignal.transform.position.x, 2), (float)Math.Round(gameSignal.transform.position.y, 2), (float)Math.Round(gameSignal.transform.position.z, 2)));
+                }
+
+                int signalIndex = 0;
+
+                foreach (var obj in signalsFromImport)
+                {
+                    signalIndex++;
+                    try
+                    {
+                        JObject jObj = JObject.FromObject(obj);
+                        string name = jObj["n"]?.ToString();
+                        if (string.IsNullOrEmpty(name))
+                        {
+                            continue;
+                        }
+                        JArray dArray = jObj["d"] as JArray;
+                        if (dArray != null && dArray.Count == 4)
+                        {
+                            var position = new Vector3((float)dArray[0], (float)dArray[1], (float)dArray[2]);
+                            if (position == default || position == null || position == Vector3.zero)
+                            {
+                                continue;
+                            }
+                            if (existsMarkersPos.Contains(position))
+                            {
+                                ErrorMessage.AddDebug(string.Format(Language.main.Get("ImportMarkersAlreadyExists"), signalIndex));
+                                continue;
+                            }
+                            PlaceMarker(name, position, (int)dArray[3]);
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        logger.LogError($"Parse marker error: {e.Message}");
+                    }
+                }
+
             });
         }
 
@@ -213,12 +354,16 @@ namespace EasyMarkersMod
                     if (option == 1)
                     {
                         PingManager.Unregister(pingInstance);
+
                         PrefabIdentifier prefab = pingInstance.GetComponent<PrefabIdentifier>();
                         if (prefab != null)
-                        {
                             UnityEngine.Object.Destroy(prefab);
-                        }
+                        SignalPing signal = pingInstance.GetComponent<SignalPing>();
+                        if (signal != null)
+                            UnityEngine.Object.Destroy(signal);
                         UnityEngine.Object.Destroy(pingInstance);
+                        if (pingInstance.gameObject != null)
+                            UnityEngine.Object.Destroy(pingInstance.gameObject);
                     }
                 }, new string[]
                 {
@@ -278,7 +423,7 @@ namespace EasyMarkersMod
                         return;
                     }
 
-                    uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), "OK", signal.descriptionKey.Substring(EasyMarkers.Prefix.Length), 256, (string markerLabel) =>
+                    uGUI.main.userInput.RequestString(Language.main.Get("InputMarkerNameHeader"), Language.main.Get("OK"), signal.descriptionKey.Substring(EasyMarkers.Prefix.Length), 256, (string markerLabel) =>
                     {
                         if (string.IsNullOrEmpty(markerLabel))
                         {
@@ -333,17 +478,17 @@ namespace EasyMarkersMod
     {
         [HarmonyPrefix]
         [HarmonyPatch("Open")]
-        public static void CreateAddMarkerButtonPatch(uGUI_PingTab __instance)
+        public static void CreateAddMarkerButtonsPatch(uGUI_PingTab __instance)
         {
             if (__instance.visibilityToggle?.transform?.parent == null || __instance.visibilityToggle.transform.parent.Find("EasyMarkers_AddMarkerButton") != null)
             {
                 return;
             }
 
-            CreateAddMarkerButton(__instance);
+            CreateAddMarkerButtons(__instance);
         }
 
-        private static void CreateAddMarkerButton(uGUI_PingTab __instance)
+        private static void CreateAddMarkerButtons(uGUI_PingTab __instance)
         {
             Toggle visibilityToggle = __instance.visibilityToggle;
             if (visibilityToggle == null)
@@ -356,6 +501,10 @@ namespace EasyMarkersMod
             {
                 return;
             }
+
+            // Add button
+
+            RectTransform toggleVisibilityRect = visibilityToggle.GetComponent<RectTransform>();
 
             GameObject addMarkerButtonObj = GameObject.Instantiate(visibilityToggle.gameObject, parentTransform);
             addMarkerButtonObj.name = "EasyMarkers_AddMarkerButton";
@@ -372,7 +521,8 @@ namespace EasyMarkersMod
 
             Button addMarkerButton = addMarkerButtonObj.AddComponent<Button>();
 
-            if (EasyMarkers.AddMarkerSprite != null) {
+            if (EasyMarkers.AddMarkerSprite != null)
+            {
                 Image newImage = addMarkerButton.GetComponent<Image>();
                 newImage.sprite = EasyMarkers.AddMarkerSprite;
                 newImage.preserveAspect = true;
@@ -382,15 +532,14 @@ namespace EasyMarkersMod
             RectTransform rectTransform = addMarkerButtonObj.GetComponent<RectTransform>();
             if (rectTransform != null)
             {
-                RectTransform toggleRect = visibilityToggle.GetComponent<RectTransform>();
-                if (toggleRect != null)
+                if (toggleVisibilityRect != null)
                 {
                     rectTransform.anchoredPosition = new Vector2(
-                        toggleRect.anchoredPosition.x - 80,
-                        toggleRect.anchoredPosition.y
+                        toggleVisibilityRect.anchoredPosition.x - 80,
+                        toggleVisibilityRect.anchoredPosition.y
                     );
 
-                    rectTransform.sizeDelta = new Vector2(toggleRect.sizeDelta.y, toggleRect.sizeDelta.y);
+                    rectTransform.sizeDelta = new Vector2(toggleVisibilityRect.sizeDelta.y, toggleVisibilityRect.sizeDelta.y);
                 }
             }
 
@@ -399,6 +548,90 @@ namespace EasyMarkersMod
 
             addMarkerButton.onClick.AddListener(() => {
                 EasyMarkers.Create();
+            });
+
+            // Export button
+
+            GameObject exportMarkersButtonObj = GameObject.Instantiate(visibilityToggle.gameObject, parentTransform);
+            exportMarkersButtonObj.name = "EasyMarkers_ExportMarkersButton";
+
+            GameObject.DestroyImmediate(exportMarkersButtonObj.GetComponent<Toggle>());
+            Image[] allImagesOnExportButton = exportMarkersButtonObj.GetComponentsInChildren<Image>();
+            foreach (Image img in allImagesOnExportButton)
+                if (img.name == "Eye")
+                    GameObject.DestroyImmediate(img);
+
+            Button exportMarkersButton = exportMarkersButtonObj.AddComponent<Button>();
+
+            if (EasyMarkers.SaveMarkersSprite != null)
+            {
+                Image newImage = exportMarkersButton.GetComponent<Image>();
+                newImage.sprite = EasyMarkers.SaveMarkersSprite;
+                newImage.preserveAspect = true;
+                newImage.color = Color.white;
+            }
+
+            RectTransform exportRectTransform = exportMarkersButtonObj.GetComponent<RectTransform>();
+            if (exportRectTransform != null)
+            {
+                if (toggleVisibilityRect != null)
+                {
+                    exportRectTransform.anchoredPosition = new Vector2(
+                        toggleVisibilityRect.anchoredPosition.x,
+                        toggleVisibilityRect.anchoredPosition.y + 80
+                    );
+
+                    exportRectTransform.sizeDelta = new Vector2(toggleVisibilityRect.sizeDelta.y, toggleVisibilityRect.sizeDelta.y);
+                }
+            }
+
+            SimpleTooltip exportTooltip = exportMarkersButtonObj.AddComponent<SimpleTooltip>();
+            exportTooltip.text = Language.main.Get("ExportMarkersTooltip");
+
+            exportMarkersButton.onClick.AddListener(() => {
+                EasyMarkers.Export();
+            });
+
+            // Import button
+
+            GameObject importMarkersButtonObj = GameObject.Instantiate(visibilityToggle.gameObject, parentTransform);
+            importMarkersButtonObj.name = "EasyMarkers_ImportMarkersButton";
+
+            GameObject.DestroyImmediate(importMarkersButtonObj.GetComponent<Toggle>());
+            Image[] allImagesOnImportButton = importMarkersButtonObj.GetComponentsInChildren<Image>();
+            foreach (Image img in allImagesOnImportButton)
+                if (img.name == "Eye")
+                    GameObject.DestroyImmediate(img);
+
+            Button importMarkersButton = importMarkersButtonObj.AddComponent<Button>();
+
+            if (EasyMarkers.LoadMarkersSprite != null)
+            {
+                Image newImage = importMarkersButton.GetComponent<Image>();
+                newImage.sprite = EasyMarkers.LoadMarkersSprite;
+                newImage.preserveAspect = true;
+                newImage.color = Color.white;
+            }
+
+            RectTransform importRectTransform = importMarkersButtonObj.GetComponent<RectTransform>();
+            if (importRectTransform != null)
+            {
+                if (toggleVisibilityRect != null)
+                {
+                    importRectTransform.anchoredPosition = new Vector2(
+                        toggleVisibilityRect.anchoredPosition.x - 80,
+                        toggleVisibilityRect.anchoredPosition.y + 80
+                    );
+
+                    importRectTransform.sizeDelta = new Vector2(toggleVisibilityRect.sizeDelta.y, toggleVisibilityRect.sizeDelta.y);
+                }
+            }
+
+            SimpleTooltip importTooltip = importMarkersButtonObj.AddComponent<SimpleTooltip>();
+            importTooltip.text = Language.main.Get("ImportMarkersTooltip");
+
+            importMarkersButton.onClick.AddListener(() => {
+                EasyMarkers.Import();
             });
         }
 

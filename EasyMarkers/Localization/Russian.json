@@ -2,5 +2,16 @@
 	"InputMarkerNameHeader": "Название метки",
 	"InputDefaultMarkerName": "Метка ({0} м)",
 	"DeleteMarkerConfirmDialogHeader": "Удалить метку?",
-	"AddMarkerButtonTooltip": "Поставить метку в текущем месте"
+	"AddMarkerButtonTooltip": "Поставить метку в текущем месте",
+	"ImportMarkersTooltip": "Восстановить метки",
+	"ImportMarkersLabel": "Вставьте закодированную строку меток",
+	"ImportMarkersInvalidCode": "Ошибка загрузки меток",
+	"ImportMarkersSuccessMessage": "Метки загружены",
+	"ImportMarkersAlreadyExists": "Метка {0} уже существует в указанных координатах",
+	"ExportMarkersTooltip": "Сохранить метки",
+	"ExportMarkersLabel": "Код видимых меток",
+	"ExportMarkersNoMarkersMessage": "Нет видимых меток для сохранения",
+	"ExportMarkersCopiedToClipboard": "Видимые метки скопированы в буфер обмена",
+	"ExportMarkersErrorClipboard": "Не получилось поместить в буфер обмена, скопируйте код вручную",
+	"EM_OK": "Готово"
 }
